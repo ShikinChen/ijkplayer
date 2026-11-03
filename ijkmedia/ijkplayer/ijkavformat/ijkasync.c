@@ -432,6 +432,7 @@ static int async_read(URLContext *h, unsigned char *buf, int size) {
 
 static int fifo_do_not_copy_func(void *opaque, void *buf, size_t *nb_elems) {
     // do not copy
+    return 0;
 }
 
 static int64_t async_seek(URLContext *h, int64_t pos, int whence) {

@@ -199,8 +199,8 @@ export LD=${FF_TOOLCHAIN_PATH_BIN}/${FF_CROSS_PREFIX}-ld
 export AR=${FF_TOOLCHAIN_PATH_BIN}/${FF_CROSS_PREFIX}-ar
 export STRIP=${FF_TOOLCHAIN_PATH_BIN}/${FF_CROSS_PREFIX}-strip
 
-NM=${FF_TOOLCHAIN_PATH_BIN}/${FF_CROSS_PREFIX}-nm
-RANLIB=${FF_TOOLCHAIN_PATH_BIN}/${FF_CROSS_PREFIX}-ranlib
+export NM=${FF_TOOLCHAIN_PATH_BIN}/${FF_CROSS_PREFIX}-nm
+export RANLIB=${FF_TOOLCHAIN_PATH_BIN}/${FF_CROSS_PREFIX}-ranlib
 
 if [ ! -f "$AR" ]; then
     ln -s ${FF_TOOLCHAIN_PATH_BIN}/llvm-ar $AR
@@ -221,6 +221,8 @@ SYSROOT=${FF_TOOLCHAIN_PATH}/sysroot
 
 FF_CFG_FLAGS="$FF_CFG_FLAGS zlib-dynamic"
 FF_CFG_FLAGS="$FF_CFG_FLAGS no-shared"
+# ijkplayer links static OpenSSL libraries and does not load provider modules.
+FF_CFG_FLAGS="$FF_CFG_FLAGS no-legacy"
 FF_CFG_FLAGS="$FF_CFG_FLAGS --prefix=${FF_PREFIX}"
 FF_CFG_FLAGS="$FF_CFG_FLAGS --sysroot=${SYSROOT}"
 FF_CFG_FLAGS="$FF_CFG_FLAGS --openssldir=${FF_PREFIX}"
@@ -240,7 +242,6 @@ FF_CFG_FLAGS="$FF_CFG_FLAGS -D__ANDROID_API__=$FF_ANDROID_PLATFORM"
 NDK_MAJOR=$(echo "$IJK_NDK_REL" | cut -d'.' -f1)
 if [ "$NDK_MAJOR" -lt 27 ]; then
     FF_CFG_FLAGS="$FF_CFG_FLAGS no-quic"
-    FF_CFG_FLAGS="$FF_CFG_FLAGS no-legacy"
 fi
 
 #--------------------

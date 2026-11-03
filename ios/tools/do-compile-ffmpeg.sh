@@ -39,12 +39,12 @@ FF_BUILD_OPT=$2
 echo "FF_ARCH=$FF_ARCH"
 echo "FF_BUILD_OPT=$FF_BUILD_OPT"
 if [ -z "$FF_ARCH" ]; then
-    echo "You must specific an architecture 'armv7, armv7s, arm64, i386, x86_64, ...'.\n"
+    echo "You must specific an architecture 'arm64 or x86_64'.\n"
     exit 1
 fi
 
 
-FF_BUILD_ROOT=`pwd`
+FF_BUILD_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 FF_TAGET_OS="darwin"
 
 
@@ -54,6 +54,11 @@ source $FF_BUILD_ROOT/../config/module.sh
 
 FFMPEG_CFG_FLAGS=
 FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS $COMMON_FF_CFG_FLAGS"
+# The shared module configuration also enables Android-only integrations.
+FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS --disable-jni --disable-mediacodec"
+# VideoToolbox uses the AVC/NAL helpers built with the ISO writer.
+FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS --enable-muxer=mov,mp4 --enable-bsf=vp9_superframe --enable-parser=ac3"
+FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS --disable-decoder=av1_mediacodec,h264_mediacodec,hevc_mediacodec"
 
 # Optimization options (experts only):
 # FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS --disable-armv5te"
@@ -72,7 +77,7 @@ FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS --disable-stripping"
 FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS --arch=$FF_ARCH"
 FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS --target-os=$FF_TAGET_OS"
 FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS --enable-static"
-FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS --disable-shared"
+FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS --disable-shared --disable-vulkan"
 FFMPEG_EXTRA_CFLAGS=
 
 # i386, x86_64
@@ -122,39 +127,17 @@ FF_DEP_OPENSSL_INC=
 FF_DEP_OPENSSL_LIB=
 FF_XCODE_BITCODE=
 
-if [ "$FF_ARCH" = "i386" ]; then
-    FF_BUILD_NAME="ffmpeg-i386"
-    FF_BUILD_NAME_OPENSSL=openssl-i386
-    FF_XCRUN_PLATFORM="iPhoneSimulator"
-    FF_XCRUN_OSVERSION="-mios-simulator-version-min=6.0"
-    FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS $FFMPEG_CFG_FLAGS_SIMULATOR"
-elif [ "$FF_ARCH" = "x86_64" ]; then
+if [ "$FF_ARCH" = "x86_64" ]; then
     FF_BUILD_NAME="ffmpeg-x86_64"
     FF_BUILD_NAME_OPENSSL=openssl-x86_64
     FF_XCRUN_PLATFORM="iPhoneSimulator"
-    FF_XCRUN_OSVERSION="-mios-simulator-version-min=7.0"
+    FF_XCRUN_OSVERSION="-mios-simulator-version-min=${IOS_DEPLOYMENT_TARGET:-15.0}"
     FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS $FFMPEG_CFG_FLAGS_SIMULATOR"
-elif [ "$FF_ARCH" = "armv7" ]; then
-    FF_BUILD_NAME="ffmpeg-armv7"
-    FF_BUILD_NAME_OPENSSL=openssl-armv7
-    FF_XCRUN_OSVERSION="-miphoneos-version-min=6.0"
-    FF_XCODE_BITCODE="-fembed-bitcode"
-    FFMPEG_CFG_FLAGS_ARM="$FFMPEG_CFG_FLAGS_ARM --disable-asm"
-    FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS $FFMPEG_CFG_FLAGS_ARM"
-#    FFMPEG_CFG_CPU="--cpu=cortex-a8"
-elif [ "$FF_ARCH" = "armv7s" ]; then
-    FF_BUILD_NAME="ffmpeg-armv7s"
-    FF_BUILD_NAME_OPENSSL=openssl-armv7s
-    FFMPEG_CFG_CPU="--cpu=swift"
-    FF_XCRUN_OSVERSION="-miphoneos-version-min=6.0"
-    FF_XCODE_BITCODE="-fembed-bitcode"
-    FFMPEG_CFG_FLAGS_ARM="$FFMPEG_CFG_FLAGS_ARM --disable-asm"
-    FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS $FFMPEG_CFG_FLAGS_ARM"
 elif [ "$FF_ARCH" = "arm64" ]; then
     FF_BUILD_NAME="ffmpeg-arm64"
     FF_BUILD_NAME_OPENSSL=openssl-arm64
-    FF_XCRUN_OSVERSION="-miphoneos-version-min=7.0"
-    FF_XCODE_BITCODE="-fembed-bitcode"
+    FF_XCRUN_OSVERSION="-miphoneos-version-min=${IOS_DEPLOYMENT_TARGET:-15.0}"
+    FF_XCODE_BITCODE=""
     FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS $FFMPEG_CFG_FLAGS_ARM"
     FF_GASPP_EXPORT="GASPP_FIX_XCODE5=1"
 else
@@ -171,7 +154,7 @@ echo "===================="
 echo "[*] make ios toolchain $FF_BUILD_NAME"
 echo "===================="
 
-FF_BUILD_SOURCE="$FF_BUILD_ROOT/$FF_BUILD_NAME"
+FF_BUILD_SOURCE="$FF_BUILD_ROOT/../extra/ffmpeg"
 FF_BUILD_PREFIX="$FF_BUILD_ROOT/build/$FF_BUILD_NAME/output"
 
 FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS --prefix=$FF_BUILD_PREFIX"
@@ -206,11 +189,14 @@ FFMPEG_DEP_OPENSSL_INC=$FF_BUILD_ROOT/build/$FF_BUILD_NAME_OPENSSL/output/includ
 FFMPEG_DEP_OPENSSL_LIB=$FF_BUILD_ROOT/build/$FF_BUILD_NAME_OPENSSL/output/lib
 #--------------------
 # with openssl
+if [ -d "$FF_BUILD_ROOT/../extra/openssl" ]; then
+    bash "$FF_BUILD_ROOT/tools/do-compile-openssl.sh" "$FF_ARCH"
+fi
 if [ -f "${FFMPEG_DEP_OPENSSL_LIB}/libssl.a" ]; then
-    FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS --enable-openssl"
+    FFMPEG_CFG_FLAGS="$FFMPEG_CFG_FLAGS --enable-openssl --enable-nonfree"
 
     FFMPEG_CFLAGS="$FFMPEG_CFLAGS -I${FFMPEG_DEP_OPENSSL_INC}"
-    FFMPEG_DEP_LIBS="$FFMPEG_CFLAGS -L${FFMPEG_DEP_OPENSSL_LIB} -lssl -lcrypto"
+    FFMPEG_DEP_LIBS="-L${FFMPEG_DEP_OPENSSL_LIB} -lssl -lcrypto"
 fi
 
 #--------------------
@@ -222,7 +208,7 @@ if [ ! -d $FF_BUILD_SOURCE ]; then
     echo ""
     echo "!! ERROR"
     echo "!! Can not find FFmpeg directory for $FF_BUILD_NAME"
-    echo "!! Run 'sh init-ios.sh' first"
+    echo "!! Run 'git submodule update --init extra/ffmpeg' first"
     echo ""
     exit 1
 fi
@@ -232,25 +218,25 @@ export DEBUG_INFORMATION_FORMAT=dwarf-with-dsym
 
 cd $FF_BUILD_SOURCE
 if [ -f "./config.h" ]; then
-    echo 'reuse configure'
-else
-    echo "config: $FFMPEG_CFG_FLAGS $FF_XCRUN_CC"
-    ./configure \
-        $FFMPEG_CFG_FLAGS \
-        --cc="$FF_XCRUN_CC" \
-        $FFMPEG_CFG_CPU \
-        --extra-cflags="$FFMPEG_CFLAGS" \
-        --extra-cxxflags="$FFMPEG_CFLAGS" \
-        --extra-ldflags="$FFMPEG_LDFLAGS $FFMPEG_DEP_LIBS"
-    make clean
+    make distclean
 fi
+
+echo "config: $FFMPEG_CFG_FLAGS $FF_XCRUN_CC"
+./configure \
+    $FFMPEG_CFG_FLAGS \
+    --cc="$FF_XCRUN_CC" \
+    $FFMPEG_CFG_CPU \
+    --extra-cflags="$FFMPEG_CFLAGS" \
+    --extra-cxxflags="$FFMPEG_CFLAGS" \
+    --extra-ldflags="$FFMPEG_LDFLAGS $FFMPEG_DEP_LIBS"
+make clean
 
 #--------------------
 echo "\n--------------------"
 echo "[*] compile ffmpeg"
 echo "--------------------"
 cp config.* $FF_BUILD_PREFIX
-make -j3 $FF_GASPP_EXPORT
+make -j"$(sysctl -n hw.ncpu)" $FF_GASPP_EXPORT
 make install
 mkdir -p $FF_BUILD_PREFIX/include/libffmpeg
 cp -f config.h $FF_BUILD_PREFIX/include/libffmpeg/config.h

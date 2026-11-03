@@ -1,0 +1,16 @@
+PODS:
+  - IJKMediaFramework (0.8.8)
+
+DEPENDENCIES:
+  - IJKMediaFramework (from `../IJKMediaFramework`)
+
+EXTERNAL SOURCES:
+  IJKMediaFramework:
+    :path: "../IJKMediaFramework"
+
+SPEC CHECKSUMS:
+  IJKMediaFramework: d124bf9a335f92c0a68975c90785f9947545afab
+
+PODFILE CHECKSUM: c2e83680653e75b54174924d2a9af1d1f92dde9b
+
+COCOAPODS: 1.17.0

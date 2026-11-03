@@ -1,0 +1,3 @@
+// Generated flags are present when the optional OpenSSL libraries are built.
+#include? "../build/ffmpeg-dependencies.xcconfig"
+OTHER_LIBTOOLFLAGS = $(inherited) $(IJK_OPENSSL_LDFLAGS)

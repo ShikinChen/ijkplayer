@@ -115,8 +115,8 @@ cd android/contrib
 ```
 
 执行完 compile-ffmpeg.sh arm64 编译完 ffmpeg 的 arm64 静态库后,用 android studio 直接将
-ijkplayer-android/android/ijkplayer/android/ijkplayer 导入整个项目,并且在设置修改 Gradle JDK 为
-java-11
+ijkplayer-android/android/ijkplayer 导入整个项目,并且在设置修改 Gradle JDK 为
+java-17
 
 ### 打包
 
@@ -171,3 +171,98 @@ cd ../..
 cd android/ijkplayer
 ./gradlew :ijkplayer-java:assembleRelease
 ```
+
+## iOS 编译和使用
+
+### 环境要求
+
+- macOS、完整 Xcode 和 iOS SDK；先启动 Xcode 完成首次初始化。
+- CocoaPods（`pod` 命令可用），可通过 `brew install cocoapods` 安装。
+- 默认最低支持 iOS 15.0；当前 CocoaPods 分发包支持 iPhone 真机 arm64，不包含模拟器切片。
+
+Android 与 iOS 共用 `extra/ffmpeg`、可选的 `extra/openssl` 和
+`config/module.sh`，请依次构建，不要同时执行两个平台的依赖编译。
+
+### 编译 FFmpeg 和打包 Framework
+
+以下命令在仓库根目录执行：
+
+```shell
+# 首次拉取后，初始化 FFmpeg 等子模块
+git submodule update --init --recursive
+
+# 可选：需要 HTTPS 时初始化 OpenSSL；已有 extra/openssl 时可跳过
+./init-android-openssl.sh
+
+# 第一步：编译 iOS arm64 的 FFmpeg；检测到 OpenSSL 源码时会自动编译并链接
+./ios/compile-ffmpeg.sh arm64
+
+# 第二步：编译播放器并生成可直接复制的 CocoaPods 分发目录
+./ios/build-framework.sh
+```
+
+`init-android-openssl.sh` 虽以 Android 命名，但初始化的 `extra/openssl`
+也供 iOS 使用。iOS 构建不需要设置 `ANDROID_NDK`。
+
+`compile-ffmpeg.sh arm64` 只生成依赖静态库，随后执行 `build-framework.sh`
+才会生成或更新下面的独立目录：
+
+```text
+ios/IJKMediaFramework/
+├── IJKMediaFramework.podspec
+├── IJKMediaFramework.framework/
+├── LICENSE.txt
+├── Licenses/
+└── README.md
+```
+
+FFmpeg 的单架构产物位于 `ios/build/ffmpeg-arm64/output`，合并后的依赖库及头文件
+位于 `ios/build/universal`。`build-framework.sh` 将播放器打包为 Release 静态
+Framework，并包含当前启用的 FFmpeg/OpenSSL 依赖。
+
+只修改播放器源码时，重新执行 `./ios/build-framework.sh` 即可；修改 FFmpeg、
+OpenSSL 或模块配置后，需要先重新执行 `./ios/compile-ffmpeg.sh arm64`。
+只修改 Demo 时，无需重新打包播放器。
+
+### 运行 iOS Demo
+
+完成上述打包后，在仓库根目录执行：
+
+```shell
+cd ios/IJKMediaDemo
+pod install
+open IJKMediaDemo.xcworkspace
+```
+
+Demo 的 Podfile 已通过本地路径引入播放器：
+
+```ruby
+pod 'IJKMediaFramework', :path => '../IJKMediaFramework'
+```
+
+在 Xcode 中选择 `IJKMediaDemo` Scheme 和 iPhone 真机，在
+Signing & Capabilities 中设置自己的 Team、Bundle Identifier 后运行。
+使用 CocoaPods 后应打开 `IJKMediaDemo.xcworkspace`；不要同时单独打开
+`IJKMediaPlayer.xcodeproj`，以免产生子工程重复加载冲突。
+
+### 在其他项目中通过 CocoaPods 引入
+
+复制整个 `ios/IJKMediaFramework` 文件夹到目标项目，例如与目标项目的 Podfile 同级。
+该文件夹已包含 podspec、二进制和许可证，接入时无需原仓库源码。Podfile 示例：
+
+```ruby
+platform :ios, '15.0'
+
+target 'YourApp' do
+  pod 'IJKMediaFramework', :path => './IJKMediaFramework'
+end
+```
+
+执行 `pod install`，然后通过生成的 `.xcworkspace` 打开项目。在 Objective-C 中引入：
+
+```objc
+#import <IJKMediaFramework/IJKMediaFramework.h>
+```
+
+需要复制完整文件夹，单独复制 `.podspec` 不包含播放器二进制。
+更多依赖构建选项见 [iOS 构建说明](ios/README.md)。
