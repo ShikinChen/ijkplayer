@@ -26,6 +26,7 @@
 #include "ffpipeline_ios.h"
 #include <mach/mach_time.h>
 #include "libavformat/avc.h"
+#include "libavformat/nal.h"
 #include "ijksdl_vout_ios_gles2.h"
 #include "h264_sps_parser.h"
 #include "ijkplayer/ff_ffplay_debug.h"
@@ -515,7 +516,7 @@ static int decode_video_internal(Ijk_VideoToolBox_Opaque* context, AVCodecContex
         if(avio_open_dyn_buf(&pb) < 0) {
             goto failed;
         }
-        ff_avc_parse_nal_units(pb, pData, iSize);
+        ff_nal_parse_units(pb, pData, iSize);
         demux_size = avio_close_dyn_buf(pb, &demux_buff);
         // ALOGI("demux_size:%d\n", demux_size);
         if (demux_size == 0) {
@@ -551,9 +552,11 @@ static int decode_video_internal(Ijk_VideoToolBox_Opaque* context, AVCodecContex
         goto failed;
     }
 
+#ifdef AV_PKT_FLAG_NEW_SEG
     if (avpkt->flags & AV_PKT_FLAG_NEW_SEG) {
         context->new_seg_flag = true;
     }
+#endif
 
     sample_info = &context->sample_info;
     if (!sample_info) {
@@ -623,8 +626,8 @@ static inline void DuplicatePkt(Ijk_VideoToolBox_Opaque* context, const AVPacket
         ResetPktBuffer(context);
     }
     AVPacket* avpkt = &context->m_buffer_packet[context->m_buffer_deep];
-    av_copy_packet(avpkt, pkt);
-    context->m_buffer_deep++;
+    if (av_packet_ref(avpkt, pkt) >= 0)
+        context->m_buffer_deep++;
 }
 
 
@@ -633,7 +636,7 @@ static int decode_video(Ijk_VideoToolBox_Opaque* context, AVCodecContext *avctx,
 {
     int      ret            = 0;
     uint8_t *size_data      = NULL;
-    int      size_data_size = 0;
+    size_t   size_data_size = 0;
 
     if (!avpkt || !avpkt->data) {
         return 0;
@@ -644,18 +647,23 @@ static int decode_video(Ijk_VideoToolBox_Opaque* context, AVCodecContext *avctx,
         size_data = av_packet_get_side_data(avpkt, AV_PKT_DATA_NEW_EXTRADATA, &size_data_size);
         // minimum avcC(sps,pps) = 7
         if (size_data && size_data_size > 7) {
-            int             got_picture = 0;
             AVFrame        *frame      = av_frame_alloc();
             AVDictionary   *codec_opts = NULL;
             AVCodecContext *new_avctx  = avcodec_alloc_context3(avctx->codec);
-            if (!new_avctx)
+            if (!new_avctx || !frame) {
+                av_frame_free(&frame);
+                avcodec_free_context(&new_avctx);
                 return AVERROR(ENOMEM);
+            }
 
             avcodec_parameters_to_context(new_avctx, context->codecpar);
             av_freep(&new_avctx->extradata);
             new_avctx->extradata = av_mallocz(size_data_size + AV_INPUT_BUFFER_PADDING_SIZE);
-            if (!new_avctx->extradata)
+            if (!new_avctx->extradata) {
+                av_frame_free(&frame);
+                avcodec_free_context(&new_avctx);
                 return AVERROR(ENOMEM);
+            }
             memcpy(new_avctx->extradata, size_data, size_data_size);
             new_avctx->extradata_size = size_data_size;
 
@@ -663,23 +671,31 @@ static int decode_video(Ijk_VideoToolBox_Opaque* context, AVCodecContext *avctx,
             ret = avcodec_open2(new_avctx, avctx->codec, &codec_opts);
             av_dict_free(&codec_opts);
             if (ret < 0) {
+                av_frame_free(&frame);
                 avcodec_free_context(&new_avctx);
                 return ret;
             }
 
-            ret = avcodec_decode_video2(new_avctx, frame, &got_picture, avpkt);
+            ret = avcodec_send_packet(new_avctx, avpkt);
+            if (ret >= 0) {
+                ret = avcodec_receive_frame(new_avctx, frame);
+                // A delayed decoder can still update dimensions from the SPS.
+                if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+                    ret = 0;
+            }
             if (ret < 0) {
+                av_frame_free(&frame);
                 avcodec_free_context(&new_avctx);
                 return ret;
             } else {
-                if (context->codecpar->width  != new_avctx->width &&
+                if (context->codecpar->width  != new_avctx->width ||
                     context->codecpar->height != new_avctx->height) {
                     avcodec_parameters_from_context(context->codecpar, new_avctx);
                     context->refresh_request = true;
                 }
             }
 
-            av_frame_unref(frame);
+            av_frame_free(&frame);
             avcodec_free_context(&new_avctx);
         }
     } else {
@@ -855,7 +871,7 @@ int videotoolbox_sync_decode_frame(Ijk_VideoToolBox_Opaque* context)
                 }
             } while (ffp_is_flush_packet(&pkt) || d->queue->serial != d->pkt_serial);
 
-            av_packet_split_side_data(&pkt);
+            // Current FFmpeg keeps side data separate from packet payloads.
 
             av_packet_unref(&d->pkt);
             d->pkt_temp = d->pkt = pkt;

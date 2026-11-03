@@ -19,14 +19,11 @@
 #----------
 # modify for your build tool
 
-FF_ALL_ARCHS_IOS6_SDK="armv7 armv7s i386"
-FF_ALL_ARCHS_IOS7_SDK="armv7 armv7s arm64 i386 x86_64"
-FF_ALL_ARCHS_IOS8_SDK="armv7 arm64 i386 x86_64"
-
-FF_ALL_ARCHS=$FF_ALL_ARCHS_IOS8_SDK
+FF_ALL_ARCHS="arm64 x86_64"
 
 #----------
-UNI_BUILD_ROOT=`pwd`
+UNI_BUILD_ROOT=$(cd "$(dirname "$0")" && pwd)
+cd "$UNI_BUILD_ROOT"
 UNI_TMP="$UNI_BUILD_ROOT/tmp"
 UNI_TMP_LLVM_VER_FILE="$UNI_TMP/llvm.ver.txt"
 FF_TARGET=$1
@@ -114,16 +111,22 @@ do_lipo_all () {
     do
         do_lipo_ssl "$SSL_LIB.a";
     done
+
+    # Static frameworks must also carry the dependencies used by FFmpeg TLS.
+    echo 'IJK_OPENSSL_LDFLAGS =' > "$UNI_BUILD_ROOT/build/ffmpeg-dependencies.xcconfig"
+    if [ -f "$UNI_BUILD_ROOT/build/universal/lib/libssl.a" ]; then
+        echo 'IJK_OPENSSL_LDFLAGS = -lssl -lcrypto' > "$UNI_BUILD_ROOT/build/ffmpeg-dependencies.xcconfig"
+    fi
+
+    if [ -n "$ANY_ARCH" ] && [ -d "$UNI_BUILD_ROOT/build/openssl-$ANY_ARCH/output/include/openssl" ]; then
+        cp -R "$UNI_BUILD_ROOT/build/openssl-$ANY_ARCH/output/include/openssl" "$UNI_BUILD_ROOT/build/universal/include/"
+    fi
 }
 
 #----------
-if [ "$FF_TARGET" = "armv7" -o "$FF_TARGET" = "armv7s" -o "$FF_TARGET" = "arm64" ]; then
+if [ "$FF_TARGET" = "arm64" -o "$FF_TARGET" = "x86_64" ]; then
     echo_archs
-    sh tools/do-compile-ffmpeg.sh $FF_TARGET $FF_TARGET_EXTRA
-    do_lipo_all
-elif [ "$FF_TARGET" = "i386" -o "$FF_TARGET" = "x86_64" ]; then
-    echo_archs
-    sh tools/do-compile-ffmpeg.sh $FF_TARGET $FF_TARGET_EXTRA
+    bash tools/do-compile-ffmpeg.sh "$FF_TARGET" $FF_TARGET_EXTRA
     do_lipo_all
 elif [ "$FF_TARGET" = "lipo" ]; then
     echo_archs
@@ -132,7 +135,7 @@ elif [ "$FF_TARGET" = "all" ]; then
     echo_archs
     for ARCH in $FF_ALL_ARCHS
     do
-        sh tools/do-compile-ffmpeg.sh $ARCH $FF_TARGET_EXTRA
+        bash tools/do-compile-ffmpeg.sh $ARCH $FF_TARGET_EXTRA
     done
 
     do_lipo_all
@@ -145,7 +148,7 @@ elif [ "$FF_TARGET" = "clean" ]; then
     do
         echo "clean ffmpeg-$ARCH"
         echo "=================="
-        cd ffmpeg-$ARCH && git clean -xdf && cd -
+        rm -rf "build/ffmpeg-$ARCH"
     done
     echo "clean build cache"
     echo "================="
@@ -153,11 +156,11 @@ elif [ "$FF_TARGET" = "clean" ]; then
     rm -rf build/openssl-*
     rm -rf build/universal/include
     rm -rf build/universal/lib
+    rm -f build/ffmpeg-dependencies.xcconfig
     echo "clean success"
 else
     echo "Usage:"
-    echo "  compile-ffmpeg.sh armv7|arm64|i386|x86_64"
-    echo "  compile-ffmpeg.sh armv7s (obselete)"
+    echo "  compile-ffmpeg.sh arm64|x86_64"
     echo "  compile-ffmpeg.sh lipo"
     echo "  compile-ffmpeg.sh all"
     echo "  compile-ffmpeg.sh clean"

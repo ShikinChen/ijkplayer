@@ -19,14 +19,11 @@
 #----------
 # modify for your build tool
 
-FF_ALL_ARCHS_IOS6_SDK="armv7 armv7s i386"
-FF_ALL_ARCHS_IOS7_SDK="armv7 armv7s arm64 i386 x86_64"
-FF_ALL_ARCHS_IOS8_SDK="armv7 arm64 i386 x86_64"
-
-FF_ALL_ARCHS=$FF_ALL_ARCHS_IOS8_SDK
+FF_ALL_ARCHS="arm64 x86_64"
 
 #----------
-UNI_BUILD_ROOT=`pwd`
+UNI_BUILD_ROOT=$(cd "$(dirname "$0")" && pwd)
+cd "$UNI_BUILD_ROOT"
 UNI_TMP="$UNI_BUILD_ROOT/tmp"
 UNI_TMP_LLVM_VER_FILE="$UNI_TMP/llvm.ver.txt"
 FF_TARGET=$1
@@ -48,7 +45,10 @@ do_lipo () {
     LIPO_FLAGS=
     for ARCH in $FF_ALL_ARCHS
     do
-        LIPO_FLAGS="$LIPO_FLAGS $UNI_BUILD_ROOT/build/openssl-$ARCH/output/lib/$LIB_FILE"
+        ARCH_LIB_FILE="$UNI_BUILD_ROOT/build/openssl-$ARCH/output/lib/$LIB_FILE"
+        if [ -f "$ARCH_LIB_FILE" ]; then
+            LIPO_FLAGS="$LIPO_FLAGS $ARCH_LIB_FILE"
+        fi
     done
 
     xcrun lipo -create $LIPO_FLAGS -output $UNI_BUILD_ROOT/build/universal/lib/$LIB_FILE
@@ -63,16 +63,19 @@ do_lipo_all () {
         do_lipo "$FF_LIB.a";
     done
 
-    cp -R $UNI_BUILD_ROOT/build/openssl-armv7/output/include $UNI_BUILD_ROOT/build/universal/
+    for ARCH in $FF_ALL_ARCHS
+    do
+        if [ -d "$UNI_BUILD_ROOT/build/openssl-$ARCH/output/include" ]; then
+            cp -R "$UNI_BUILD_ROOT/build/openssl-$ARCH/output/include" "$UNI_BUILD_ROOT/build/universal/"
+            break
+        fi
+    done
 }
 
 #----------
-if [ "$FF_TARGET" = "armv7" -o "$FF_TARGET" = "armv7s" -o "$FF_TARGET" = "arm64" ]; then
+if [ "$FF_TARGET" = "arm64" -o "$FF_TARGET" = "x86_64" ]; then
     echo_archs
-    sh tools/do-compile-openssl.sh $FF_TARGET
-elif [ "$FF_TARGET" = "i386" -o "$FF_TARGET" = "x86_64" ]; then
-    echo_archs
-    sh tools/do-compile-openssl.sh $FF_TARGET
+    bash tools/do-compile-openssl.sh "$FF_TARGET"
 elif [ "$FF_TARGET" = "lipo" ]; then
     echo_archs
     do_lipo_all
@@ -80,7 +83,7 @@ elif [ "$FF_TARGET" = "all" ]; then
     echo_archs
     for ARCH in $FF_ALL_ARCHS
     do
-        sh tools/do-compile-openssl.sh $ARCH
+        bash tools/do-compile-openssl.sh $ARCH
     done
 
     do_lipo_all
@@ -90,12 +93,11 @@ elif [ "$FF_TARGET" = "clean" ]; then
     echo_archs
     for ARCH in $FF_ALL_ARCHS
     do
-        cd openssl-$ARCH && git clean -xdf && cd -
+        rm -rf "build/openssl-$ARCH"
     done
 else
     echo "Usage:"
-    echo "  compile-openssl.sh armv7|arm64|i386|x86_64"
-    echo "  compile-openssl.sh armv7s (obselete)"
+    echo "  compile-openssl.sh arm64|x86_64"
     echo "  compile-openssl.sh lipo"
     echo "  compile-openssl.sh all"
     echo "  compile-openssl.sh clean"

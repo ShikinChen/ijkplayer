@@ -1,0 +1,8 @@
+platform :ios, '15.0'
+install! 'cocoapods', :deterministic_uuids => true
+
+project 'IJKMediaDemo.xcodeproj'
+
+target 'IJKMediaDemo' do
+  pod 'IJKMediaFramework', :path => '../IJKMediaFramework'
+end
